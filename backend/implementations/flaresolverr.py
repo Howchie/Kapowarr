@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from asyncio import Semaphore
+from asyncio import Semaphore, TimeoutError as AsyncTimeoutError
 from datetime import datetime, timezone
 from time import time
 from typing import TYPE_CHECKING, Any, Dict, Mapping, Tuple, Union
 from urllib.parse import urlparse
 
+from aiohttp import ClientError
 from requests import RequestException
 
 from backend.base.definitions import Constants, ProxyType, StatusType
@@ -133,12 +134,14 @@ class FlareSolverr:
         session: AsyncSession,
         data: Dict[str, Any]
     ) -> Dict[str, Any]:
-        return await (await session.post(
+        async with session.post(
             base_url + Constants.FS_API_BASE,
             json=data,
             headers={'Content-Type': 'application/json'},
             timeout=Constants.REQUEST_TIMEOUT + Constants.FS_RESOLVE_TIMEOUT
-        )).json()
+        ) as response:
+            response.raise_for_status()
+            return await response.json()
 
     @staticmethod
     def test_flaresolverr(base_url: str) -> bool:
@@ -283,21 +286,31 @@ class FlareSolverr:
                 Constants.MAX_CONCURRENT_FS_SESSIONS
             )
 
-        async with self.session_semaphore:
-            result = (await self.__async_api_request(
-                self.base_url, session,
-                {
-                    'cmd': 'request.get',
-                    'url': url,
-                    'maxTimeout': Constants.FS_RESOLVE_TIMEOUT * 1000,
-                    **(self.proxy_data or {})
-                }
-            ))["solution"]
+        try:
+            async with self.session_semaphore:
+                result = (await self.__async_api_request(
+                    self.base_url, session,
+                    {
+                        'cmd': 'request.get',
+                        'url': url,
+                        'maxTimeout': Constants.FS_RESOLVE_TIMEOUT * 1000,
+                        **(self.proxy_data or {})
+                    }
+                ))["solution"]
+        except (ClientError, AsyncTimeoutError, KeyError, TypeError) as e:
+            LOGGER.warning(
+                "FlareSolverr failed to resolve Cloudflare challenge at %s: %s",
+                url, e
+            )
+            raise ClientError from e
 
-        if result["response"] is None:
+        if not isinstance(result, dict) or result.get("response") is None:
             # FlareSolverr responded, but content of
             # returned webpage is empty.
-            return
+            LOGGER.warning(
+                "FlareSolverr returned no page while resolving %s", url
+            )
+            raise ClientError
 
         FSCache.set_ua_cookies(url, result)
 

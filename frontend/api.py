@@ -4,12 +4,13 @@ from asyncio import run
 from datetime import datetime
 from io import BytesIO
 from os import remove
-from os.path import basename, splitext
+from os.path import basename, dirname, splitext
 from typing import Any, Dict, List, Tuple, Union
 
 from flask import Blueprint, after_this_request, request, send_file
 
-from backend.base.custom_exceptions import (InvalidDatabaseFile,
+from backend.base.custom_exceptions import (FileNotFound,
+                                            InvalidDatabaseFile,
                                             InvalidKeyValue, KeyNotFound)
 from backend.base.definitions import (BlocklistReason, BlocklistReasonID,
                                       CredentialData, CredentialSource,
@@ -19,7 +20,8 @@ from backend.base.definitions import (BlocklistReason, BlocklistReasonID,
                                       LibraryFilter, LibrarySorting,
                                       MonitorScheme, SpecialVersion, StartType,
                                       StatusType, VolumeData)
-from backend.base.files import folder_path
+from backend.base.files import (delete_empty_parent_folders,
+                                delete_file_folder, folder_path)
 from backend.base.helpers import hash_credential
 from backend.base.logging import LOGGER, get_log_file_contents
 from backend.features.download_queue import (DownloadHandler,
@@ -1169,6 +1171,42 @@ def api_manual_match(id: int):
         set_file_matching(id, file_matching_changes)
 
         return return_api({})
+
+
+@api.route('/volumes/<int:id>/files', methods=['DELETE'])
+@error_handler
+@auth
+def api_volume_file_delete(id: int):
+    volume = Library.get_volume(id)
+    data = request.get_json()
+    if not isinstance(data, dict):
+        raise InvalidKeyValue('body', data)
+    if 'filepath' not in data:
+        raise KeyNotFound('filepath')
+
+    filepath = data['filepath']
+    if not isinstance(filepath, str):
+        raise InvalidKeyValue('filepath', filepath)
+
+    available_files = {
+        file_match['filepath']
+        for file_match in get_file_matching(id)
+    }
+    if filepath not in available_files:
+        raise InvalidKeyValue('filepath', filepath)
+
+    volume_folder = volume.get_data().folder
+    try:
+        file_data = FilesDB.fetch(filepath=filepath)[0]
+    except FileNotFound:
+        # Newly copied files can appear in Manage Issues before a scan has
+        # registered them in the database.
+        delete_file_folder(filepath)
+    else:
+        delete_issue_file(file_data['id'])
+    delete_empty_parent_folders(dirname(filepath), volume_folder)
+
+    return return_api({})
 
 
 # region Renaming

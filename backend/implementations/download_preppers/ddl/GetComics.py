@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from asyncio import gather, run
+from asyncio import TimeoutError as AsyncTimeoutError, gather, run
 from functools import reduce
 from hashlib import sha1
 from re import IGNORECASE, compile
@@ -349,67 +349,71 @@ async def _purify_link(
         return link, DownloadClientIdentifier.TORRENT
 
     async with AsyncSession() as session:
-        r = await session.get(link)
+        async with session.get(link) as r:
+            if (
+                r.status == 429
+                and download_service == GCDownloadService.GETCOMICS
+            ):
+                raise DownloadServiceRateLimitReached(
+                    DownloadService.GETCOMICS
+                )
 
-    if r.status == 429 and download_service == GCDownloadService.GETCOMICS:
-        raise DownloadServiceRateLimitReached(DownloadService.GETCOMICS)
+            if not r.ok:
+                raise DownloadLinkBroken(link)
 
-    if not r.ok:
-        raise DownloadLinkBroken(link)
+            url = str(r.real_url)
+            content_type = r.headers.getone("Content-Type", "")
 
-    url = str(r.real_url)
-    content_type = r.headers.getone("Content-Type", "")
+            if download_service == GCDownloadService.MEGA:
+                if "#F!" in url or "/folder/" in url:
+                    # Folder download
+                    return url, DownloadClientIdentifier.MEGA_FOLDER
 
-    if download_service == GCDownloadService.MEGA:
-        if "#F!" in url or "/folder/" in url:
-            # Folder download
-            return url, DownloadClientIdentifier.MEGA_FOLDER
+                # Normal file download
+                return url, DownloadClientIdentifier.MEGA
 
-        # Normal file download
-        return url, DownloadClientIdentifier.MEGA
+            elif download_service == GCDownloadService.MEDIAFIRE:
+                if 'error.php' in url:
+                    # Link is broken
+                    raise DownloadLinkBroken(link)
 
-    elif download_service == GCDownloadService.MEDIAFIRE:
-        if 'error.php' in url:
-            # Link is broken
-            raise DownloadLinkBroken(link)
+                elif '/folder/' in url:
+                    # Folder download
+                    return url, DownloadClientIdentifier.MEDIAFIRE
 
-        elif '/folder/' in url:
-            # Folder download
-            return url, DownloadClientIdentifier.MEDIAFIRE
+                elif mediafire_dd_regex.search(url):
+                    # Link on page was to pure link
+                    return url, DownloadClientIdentifier.DDL
 
-        elif mediafire_dd_regex.search(url):
-            # Link on page was to pure link
-            return url, DownloadClientIdentifier.DDL
+                # Normal file download
+                return url, DownloadClientIdentifier.MEDIAFIRE
 
-        # Normal file download
-        return url, DownloadClientIdentifier.MEDIAFIRE
+            elif download_service == GCDownloadService.WETRANSFER:
+                return url, DownloadClientIdentifier.WETRANSFER
 
-    elif download_service == GCDownloadService.WETRANSFER:
-        return url, DownloadClientIdentifier.WETRANSFER
+            elif download_service == GCDownloadService.PIXELDRAIN:
+                if '/l/' in url:
+                    # Folder download
+                    return url, DownloadClientIdentifier.PIXELDRAIN_FOLDER
 
-    elif download_service == GCDownloadService.PIXELDRAIN:
-        if '/l/' in url:
-            # Folder download
-            return url, DownloadClientIdentifier.PIXELDRAIN_FOLDER
+                # File download
+                return url, DownloadClientIdentifier.PIXELDRAIN
 
-        # File download
-        return url, DownloadClientIdentifier.PIXELDRAIN
+            elif (
+                download_service == GCDownloadService.GETCOMICS_TORRENT
+                and content_type == "application/x-bittorrent"
+            ):
+                # Link is to torrent file
+                hash = sha1(bencode(get_torrent_info(await r.read()))).hexdigest()
+                return (
+                    "magnet:?xt=urn:btih:" + hash + "&tr=udp://tracker.cyberia.is:6969/announce&tr=udp://tracker.port443.xyz:6969/announce&tr=http://tracker3.itzmx.com:6961/announce&tr=udp://tracker.moeking.me:6969/announce&tr=http://vps02.net.orel.ru:80/announce&tr=http://tracker.openzim.org:80/announce&tr=udp://tracker.skynetcloud.tk:6969/announce&tr=https://1.tracker.eu.org:443/announce&tr=https://3.tracker.eu.org:443/announce&tr=http://re-tracker.uz:80/announce&tr=https://tracker.parrotsec.org:443/announce&tr=udp://explodie.org:6969/announce&tr=udp://tracker.filemail.com:6969/announce&tr=udp://tracker.nyaa.uk:6969/announce&tr=udp://retracker.netbynet.ru:2710/announce&tr=http://tracker.gbitt.info:80/announce&tr=http://tracker2.dler.org:80/announce",
+                    DownloadClientIdentifier.TORRENT
+                )
 
-    elif (
-        download_service == GCDownloadService.GETCOMICS_TORRENT
-        and content_type == "application/x-bittorrent"
-    ):
-        # Link is to torrent file
-        hash = sha1(bencode(get_torrent_info(await r.read()))).hexdigest()
-        return (
-            "magnet:?xt=urn:btih:" + hash + "&tr=udp://tracker.cyberia.is:6969/announce&tr=udp://tracker.port443.xyz:6969/announce&tr=http://tracker3.itzmx.com:6961/announce&tr=udp://tracker.moeking.me:6969/announce&tr=http://vps02.net.orel.ru:80/announce&tr=http://tracker.openzim.org:80/announce&tr=udp://tracker.skynetcloud.tk:6969/announce&tr=https://1.tracker.eu.org:443/announce&tr=https://3.tracker.eu.org:443/announce&tr=http://re-tracker.uz:80/announce&tr=https://tracker.parrotsec.org:443/announce&tr=udp://explodie.org:6969/announce&tr=udp://tracker.filemail.com:6969/announce&tr=udp://tracker.nyaa.uk:6969/announce&tr=udp://retracker.netbynet.ru:2710/announce&tr=http://tracker.gbitt.info:80/announce&tr=http://tracker2.dler.org:80/announce",
-            DownloadClientIdentifier.TORRENT
-        )
-
-    else:
-        # Link is DDL download from getcomics
-        # ('Main Server', 'Mirror Server', 'Link 1', 'Link 2', etc.)
-        return url, DownloadClientIdentifier.DDL
+            else:
+                # Link is DDL download from getcomics
+                # ('Main Server', 'Mirror Server', 'Link 1', 'Link 2', etc.)
+                return url, DownloadClientIdentifier.DDL
 
 
 # region Prepper
@@ -633,6 +637,13 @@ class GetComicsPrepper(DownloadPrepper):
 
                 except ClientError:
                     # Link blocked by CF and FS not setup
+                    continue
+
+                except AsyncTimeoutError:
+                    # A hoster or FlareSolverr timed out; try the next link.
+                    LOGGER.warning(
+                        'Timed out while checking download link: %s', link
+                    )
                     continue
 
                 except DownloadServiceRateLimitReached:

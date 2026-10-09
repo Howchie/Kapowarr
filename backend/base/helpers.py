@@ -1069,6 +1069,12 @@ class AsyncSession(ClientSession):
     async def _request(self, *args, **kwargs):
         method, url = args[0], args[1]
         sleep_time = Constants.BACKOFF_FACTOR_RETRIES
+        is_flaresolverr_request = (
+            self.fs.base_url is not None
+            and str(url).rstrip('/') == (
+                self.fs.base_url + Constants.FS_API_BASE
+            ).rstrip('/')
+        )
 
         ua, cf_cookie = self.fs.get_ua_cookies(url)
         self.headers.update({"User-Agent": ua})
@@ -1084,7 +1090,10 @@ class AsyncSession(ClientSession):
                     int(response.headers.get('Content-Length', -1))
                 )
 
-                if response.status in Constants.STATUS_FORCELIST_RETRIES:
+                if (
+                    response.status in Constants.STATUS_FORCELIST_RETRIES
+                    and not is_flaresolverr_request
+                ):
                     raise ClientError
 
             except ClientError:

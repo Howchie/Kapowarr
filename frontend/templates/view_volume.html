@@ -58,7 +58,10 @@
 			<input type="checkbox">
 		</td>
 		<td class="mi-filepath"></td>
-		<td></td>
+		<td class="mi-matched-to"></td>
+		<td class="mi-delete">
+			{{ icon_button('', "Delete file", "delete.svg") }}
+		</td>
 	</tr>
 	<tr class="match-entry" data-issue_id="">
 		<td>
@@ -285,11 +288,12 @@
                     </th>
                     <th>File</th>
 					<th>Matched To</th>
+					<th>Delete</th>
                 </tr>
 			</thead>
 			<tbody>
 				<tr>
-					<td colspan="3" class="empty-manage-message">No files in volume folder</td>
+					<td colspan="4" class="empty-manage-message">No files in volume folder</td>
 				</tr>
 			</tbody>
 		</table>

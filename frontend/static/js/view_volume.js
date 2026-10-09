@@ -454,17 +454,23 @@ function addManualSearch(link, indexer_id, force, button, api_key, issue_id=null
 		img.classList.remove('spinning');
 		img.src = `${url_base}/static/img/check.svg`;
 	})
-	.catch(e => {
-		e.json().then(json => {
-			if (json.error === "EnqueuingDownloadFailure") {
-				img.classList.remove('spinning');
-				img.src = `${url_base}/static/img/download.svg`;
-				button.classList.add('error');
-				button.title = enqueueFailureReasonMap[json.result.reason];
-			}
-			else
-				console.log(json)
-		})
+	.catch(async error => {
+		let json = {};
+		try {
+			json = await error.json();
+		} catch (_) {}
+
+		img.classList.remove('spinning');
+		img.src = `${url_base}/static/img/download.svg`;
+		button.classList.add('error');
+
+		if (json.error === "EnqueuingDownloadFailure")
+			button.title = enqueueFailureReasonMap[json.result.reason]
+				|| 'Download failed';
+		else
+			button.title = json.error || error.statusText || 'Download failed';
+
+		console.error('Failed to enqueue download', json, error);
 	})
 };
 
@@ -728,7 +734,18 @@ function showManageIssues(api_key) {
 			entry.querySelector('td:nth-child(2)').innerText = short_f;
 			entry.querySelector('td:nth-child(2)').title = mapping.filepath;
 
-			entry.querySelector('td:nth-child(3)').innerText = _issuesCoveredByMapping(mapping);
+			entry.querySelector('.mi-matched-to').innerText = _issuesCoveredByMapping(mapping);
+			entry.querySelector('.mi-delete button').onclick = e =>
+				sendAPI(
+					'DELETE',
+					`/volumes/${volume_id}/files`,
+					api_key,
+					{},
+					{filepath: mapping.filepath}
+				).then(() => {
+					delete managed_issues_changes[idx];
+					entry.remove();
+				});
 
 			table.appendChild(entry);
 		});
@@ -859,7 +876,7 @@ function processIssueMatch() {
 
 		managed_issues_changes[manageId] = data;
 		document.querySelector(
-			`#manage-issues-table tbody > tr[data-manage_id="${manageId}"] td:last-child`
+			`#manage-issues-table tbody > tr[data-manage_id="${manageId}"] .mi-matched-to`
 		).innerText = _issuesCoveredByMapping(data, no_match_is_tbd=true);
 	});
 	document.querySelector('#selectall-manage-input').checked = false;

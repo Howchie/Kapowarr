@@ -391,6 +391,10 @@ tbody .issue-title:hover {
 	text-wrap: nowrap;
 }
 
+#manage-issues-table .mi-delete button {
+	width: 1.5rem;
+}
+
 #show-issue-match {
 	border: 1px solid var(--border-color);
 	transition: background-color 100ms linear,
