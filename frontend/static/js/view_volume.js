@@ -338,13 +338,13 @@ function showManualSearch(api_key, issue_id=null) {
 	input.focus();
 	form.onsubmit = e => {
 		e.preventDefault();
-		runManualSearch(url, api_key, input.value.trim());
+		runManualSearch(url, api_key, input.value.trim(), issue_id);
 	};
 
-	runManualSearch(url, api_key, '');
+	runManualSearch(url, api_key, '', issue_id);
 };
 
-function runManualSearch(url, api_key, search_term) {
+function runManualSearch(url, api_key, search_term, issue_id) {
 	const generation = ++manualSearchGeneration;
 	const message = document.querySelector('#searching-message');
 	const table = document.querySelector('#search-result-table');
