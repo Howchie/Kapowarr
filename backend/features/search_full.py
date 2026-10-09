@@ -35,13 +35,17 @@ class SearchCoordinator:
     def __init__(
         self,
         volume_id: int,
-        wanted_issues: List[int]
+        wanted_issues: List[int],
+        manual_query: Union[str, None] = None
     ) -> None:
         """Initalise the coordinator.
 
         Args:
             volume_id (int): The ID of the volume to search for.
             wanted_issues (List[int]): The IDs of the issues to search for.
+            manual_query (Union[str, None], optional): Search term to send
+                once to each enabled indexer instead of generated queries.
+                Defaults to None.
         """
         volume = Volume(volume_id, check_existence=False)
         self.volume_data = volume.get_data()
@@ -52,6 +56,7 @@ class SearchCoordinator:
         }
 
         self.wanted_issues = wanted_issues
+        self.manual_query = manual_query
         self.found_results: List[MatchedSearchResultData] = []
         self.found_links: Set[str] = set()
         self.is_issue_search = len(self.wanted_issues) == 1
@@ -199,22 +204,30 @@ class SearchCoordinator:
             List[Tuple[SearchQuery, QueryResult]]: The query and accompanying
                 search results from the iteration.
         """
-        actions = [
-            team["search_action_planner"].next_action()
-            for team in self.indexers
-        ]
+        if self.manual_query is not None:
+            manual_query: SearchQuery = {
+                "query": self.manual_query,
+                "page": 1,
+                "total_available_variations": 1
+            }
+            queries = [manual_query for _ in self.indexers]
+        else:
+            actions = [
+                team["search_action_planner"].next_action()
+                for team in self.indexers
+            ]
 
-        # Remove indexers that should stop
-        for idx, (action, _) in list(enumerate(actions)):
-            if action == SearchAction.STOP:
-                del actions[idx]
-                await self.indexers[idx]["indexer"].shutdown()
-                del self.indexers[idx]
+            # Remove indexers that should stop
+            for idx, (action, _) in list(enumerate(actions)):
+                if action == SearchAction.STOP:
+                    del actions[idx]
+                    await self.indexers[idx]["indexer"].shutdown()
+                    del self.indexers[idx]
 
-        queries = [
-            team["query_builder"].next_query(action, query_keys)
-            for (action, query_keys), team in zip(actions, self.indexers)
-        ]
+            queries = [
+                team["query_builder"].next_query(action, query_keys)
+                for (action, query_keys), team in zip(actions, self.indexers)
+            ]
 
         result = await gather(*(
             team["indexer"].search(query)
@@ -309,6 +322,9 @@ class SearchCoordinator:
 
                 team["search_action_planner"].process_stats(stats)
 
+            if self.manual_query is not None:
+                break
+
         await gather(*(
             indexer['indexer'].shutdown()
             for indexer in self.indexers
@@ -322,7 +338,8 @@ class SearchCoordinator:
 
 def manual_search(
     volume_id: int,
-    issue_id: Union[int, None] = None
+    issue_id: Union[int, None] = None,
+    search_term: Union[str, None] = None
 ) -> List[MatchedSearchResultData]:
     """Do a manual search for a volume or issue.
 
@@ -330,6 +347,9 @@ def manual_search(
         volume_id (int): The id of the volume to search for.
         issue_id (Union[int, None], optional): The ID of the issue to search for,
             in the case that you want to search for an issue instead of a volume.
+            Defaults to None.
+        search_term (Union[str, None], optional): A one-off query to send to
+            enabled indexers instead of Kapowarr's generated search terms.
             Defaults to None.
 
     Returns:
@@ -354,7 +374,7 @@ def manual_search(
         f'#{issue_number}' if issue_number else ''
     )
 
-    coordinator = SearchCoordinator(volume_id, wanted_issues)
+    coordinator = SearchCoordinator(volume_id, wanted_issues, search_term)
     results = run(coordinator.search())
     LOGGER.debug('Manual search results: %s', results)
     return results

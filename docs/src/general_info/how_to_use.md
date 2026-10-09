@@ -96,6 +96,8 @@ Kapowarr regularly checks whether new downloads are available for missing issues
 
 The button 'Manual Search' will show you a list of search results for the volume/issue. From these results, you can choose yourself which one should be downloaded (instead of Kapowarr automatically choosing with Search Monitored). It is possible that the search result does not contain any matching and working downloads. In that case, the download button will turn red and the page will be added to the blocklist. Hover with your mouse over the red button to see the reason why it failed. If Kapowarr is convinced that the download links [don't match](./matching.md#search-results-for-downloads) to the volume but you click the download button anyway, it'll probably fail (because nothing matches). If you still want Kapowarr to download it, then click the icon next to the download icon, which will _force_ download it.
 
+You can enter your own search term to send the same query to each enabled indexer. Leave the field blank to use Kapowarr's generated searches. For GetComics, you can also paste the URL of a release page directly; it will appear as a result and can be force-downloaded if Kapowarr marks it as a mismatch.
+
 ### Download Queue and Post Processing
 
 When a download is added to the queue, you can see it on the Activity -> Queue page. When a download is complete, it will enter post-download processing (a.k.a. post-processing). Entirely depending on your configuration, the file could be renamed, converted to a different format and/or be extracted (if it's an archive file with issues inside). It will always be moved from the [download folder](../settings/download.md#download-folder) to its final destination inside the volume folder.

@@ -204,7 +204,20 @@
 	{{ window(True, "rename-window", "Rename volume files", rename_content, rename_submit) }}
 
 	{% set manual_search_content %}
-		<p id="searching-message">Searching...</p>
+		<form id="manual-search-form" aria-label="Search downloads">
+			<label for="manual-search-query">Search term or GetComics URL</label>
+			<div class="manual-search-query-row">
+				<input
+					type="text"
+					id="manual-search-query"
+					placeholder="e.g. Batman Vol. 5 TPB or a GetComics article URL"
+					autocomplete="off"
+				>
+				<button type="submit">Search</button>
+			</div>
+			<p>Leave blank to use Kapowarr’s generated search terms.</p>
+		</form>
+		<p id="searching-message" aria-live="polite">Searching...</p>
 		<table id="search-result-table" class="icon-text-color">
 			<thead>
 				<tr>

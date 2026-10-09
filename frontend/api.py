@@ -1225,7 +1225,13 @@ def api_convert_issue(id: int):
 @auth
 def api_volume_manual_search(id: int):
     Library.get_volume(id)
-    result = manual_search(id)
+    search_term = request.args.get("query")
+    if search_term is not None:
+        if len(search_term) > 500:
+            raise InvalidKeyValue("query", search_term)
+        search_term = search_term.strip() or None
+
+    result = manual_search(id, search_term=search_term)
     return return_api(result)
 
 
@@ -1269,9 +1275,16 @@ def api_volume_download(id: int):
 @auth
 def api_issue_manual_search(id: int):
     volume_id = Library.get_issue(id).get_data().volume_id
+    search_term = request.args.get("query")
+    if search_term is not None:
+        if len(search_term) > 500:
+            raise InvalidKeyValue("query", search_term)
+        search_term = search_term.strip() or None
+
     result = manual_search(
         volume_id,
-        id
+        id,
+        search_term
     )
     return return_api(result)
 

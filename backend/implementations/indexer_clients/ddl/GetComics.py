@@ -1,6 +1,8 @@
 from asyncio import run, sleep
 from datetime import datetime
+import re
 from typing import Any, List, Tuple, Union
+from urllib.parse import urlsplit, urlunsplit
 
 from aiohttp import ClientError
 from bs4 import BeautifulSoup, Tag
@@ -102,6 +104,38 @@ class GetComicsIndexer(BaseIndexerClient):
         if not self.session:
             self.session = AsyncSession()
 
+        article_url = self.__get_direct_article_url(query["query"])
+        if article_url:
+            page = await self.session.get_text(article_url, quiet_fail=True)
+            if not page:
+                return QueryResult([], next_page_available=False)
+
+            soup = BeautifulSoup(page, "html.parser")
+            title_el = soup.find("h1", {"class": "post-title"})
+            if not title_el:
+                return QueryResult([], next_page_available=False)
+
+            title = title_el.get_text(" ", strip=True)
+            size_match = re.search(
+                r"\bSize\s*:\s*([\d.]+\s*(?:[kmgt]?i?b))\b",
+                soup.get_text(" ", strip=True),
+                re.IGNORECASE
+            )
+            size = normalise_size(size_match.group(1)) if size_match else -1
+
+            return QueryResult([{
+                **extract_filename_data(
+                    title,
+                    assume_volume_number=False,
+                    fix_year=True
+                ),
+                "link": article_url,
+                "display_title": title,
+                "size": size,
+                "indexer_id": self._id,
+                "indexer_title": self._title
+            }], next_page_available=False)
+
         next_page_available = False
 
         if self.request_count > 5:
@@ -146,6 +180,27 @@ class GetComicsIndexer(BaseIndexerClient):
             formatted_results,
             next_page_available=next_page_available
         )
+
+    @staticmethod
+    def __get_direct_article_url(query: str) -> Union[str, None]:
+        """Return a direct GetComics article URL from a manual query, if any."""
+        try:
+            parsed_url = urlsplit(query.strip())
+            port = parsed_url.port
+        except ValueError:
+            return None
+
+        if (
+            parsed_url.scheme != "https"
+            or parsed_url.hostname not in ("getcomics.org", "www.getcomics.org")
+            or parsed_url.username is not None
+            or parsed_url.password is not None
+            or port not in (None, 443)
+            or not parsed_url.path.strip("/")
+        ):
+            return None
+
+        return urlunsplit(parsed_url._replace(fragment=""))
 
     async def discover(self, last_check: datetime) -> List[SearchResultData]:
         if not self.session:

@@ -214,6 +214,43 @@ tbody .issue-title:hover {
 	overflow-x: auto;
 }
 
+#manual-search-form {
+	align-self: stretch;
+	padding: 0;
+}
+
+#manual-search-form > label {
+	display: block;
+	margin-bottom: .4rem;
+}
+
+.manual-search-query-row {
+	display: flex;
+	gap: .5rem;
+}
+
+.manual-search-query-row input {
+	flex: 1;
+	min-width: 0;
+	padding: .5rem;
+	border: 2px solid var(--border-color);
+	border-radius: 2px;
+	background-color: var(--background-color);
+	color: var(--text-color);
+}
+
+.manual-search-query-row button {
+	padding: .5rem 1rem;
+	border-radius: 2px;
+	background-color: var(--success-color);
+	color: var(--light-color);
+}
+
+#manual-search-form > p {
+	margin-top: .4rem;
+	font-size: .85rem;
+}
+
 #searching-message {
 	text-align: center;
 }

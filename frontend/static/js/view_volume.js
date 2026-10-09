@@ -323,25 +323,46 @@ function autosearchIssue(issue_id, api_key) {
 //
 // Manual search
 //
+let manualSearchGeneration = 0;
+
 function showManualSearch(api_key, issue_id=null) {
-	// Display searching message
-	const message = document.querySelector('#searching-message');
-	const table = document.querySelector('#search-result-table');
-	const tbody = table.querySelector('tbody');
-
-	hide([table], [message]);
-
 	// Show window
 	showWindow('manual-search-window');
 
-	// Start search
-	tbody.innerHTML = '';
 	const url = issue_id
 			? `/issues/${issue_id}/manualsearch`
 			: `/volumes/${volume_id}/manualsearch`;
+	const form = document.querySelector('#manual-search-form');
+	const input = document.querySelector('#manual-search-query');
+	input.value = '';
+	input.focus();
+	form.onsubmit = e => {
+		e.preventDefault();
+		runManualSearch(url, api_key, input.value.trim());
+	};
 
-	fetchAPI(url, api_key)
+	runManualSearch(url, api_key, '');
+};
+
+function runManualSearch(url, api_key, search_term) {
+	const generation = ++manualSearchGeneration;
+	const message = document.querySelector('#searching-message');
+	const table = document.querySelector('#search-result-table');
+	const tbody = table.querySelector('tbody');
+	const search_button = document.querySelector('#manual-search-form button');
+
+	message.innerText = 'Searching...';
+	hide([table], [message]);
+	tbody.innerHTML = '';
+	search_button.disabled = true;
+	const params = search_term
+		? {query: encodeURIComponent(search_term)}
+		: {};
+
+	fetchAPI(url, api_key, params)
 	.then(json => {
+		if (generation !== manualSearchGeneration) return;
+
 		json.result.forEach(result => {
 			const entry = ViewEls.pre_build.manual_search.cloneNode(true);
 			tbody.appendChild(entry);
@@ -394,7 +415,26 @@ function showManualSearch(api_key, issue_id=null) {
 				blocklist_button.remove()
 		});
 
-		hide([message], [table]);
+		if (json.result.length) {
+			hide([message], [table]);
+		} else {
+			message.innerText = 'No search results found.';
+		}
+	})
+	.catch(async error => {
+		if (generation !== manualSearchGeneration) return;
+
+		message.innerText = 'Search failed.';
+		try {
+			const response = await error.json();
+			if (response.error)
+				message.innerText = `Search failed: ${response.error}`;
+		} catch (_) {}
+		console.error(error);
+	})
+	.finally(() => {
+		if (generation === manualSearchGeneration)
+			search_button.disabled = false;
 	});
 };
 
