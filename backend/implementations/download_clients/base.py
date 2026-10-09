@@ -172,7 +172,9 @@ class BaseDirectDownload(Download):
         self._download_thread = None
         self._download_folder = settings.download_folder
 
-        self._ssn = Session()
+        self._ssn = Session(
+            fs_resolve_timeout=Constants.FS_DOWNLOAD_RESOLVE_TIMEOUT
+        )
 
         # Create and fetch pure link to extract last info
         # This can fail if the link is broken, so do before other

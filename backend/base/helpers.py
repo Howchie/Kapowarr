@@ -936,7 +936,8 @@ def retry(
 
     Args:
         total (int): Total number of retries to allow.
-        method_whitelist (Collection[str]): HTTP methods to retry on.
+        method_whitelist (Collection[str]): HTTP methods to retry on. An empty
+            collection retries all methods.
         status_forcelist (Collection[int]): HTTP status codes to force a retry.
         backoff_factor (int): The backoff factor to apply between attempts.
 
@@ -946,14 +947,14 @@ def retry(
     if _running_urllib3_v2_and_above():
         return Retry(
             total=total,
-            allowed_methods=frozenset(method_whitelist), # type: ignore
+            allowed_methods=(frozenset(method_whitelist) or None), # type: ignore
             status_forcelist=status_forcelist,
             backoff_factor=backoff_factor
         )
     else:
         return Retry(
             total=total,
-            method_whitelist=frozenset(method_whitelist), # type: ignore
+            method_whitelist=(frozenset(method_whitelist) or None), # type: ignore
             status_forcelist=status_forcelist,
             backoff_factor=backoff_factor
         )
@@ -968,12 +969,16 @@ class Session(RSession):
     or any other `requests.exceptions.RequestException`.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        fs_resolve_timeout: int = Constants.FS_RESOLVE_TIMEOUT
+    ) -> None:
         from backend.implementations.flaresolverr import FlareSolverr
 
         super().__init__()
 
         self.fs = FlareSolverr()
+        self.fs_resolve_timeout = fs_resolve_timeout
 
         retries = retry(
             total=Constants.TOTAL_RETRIES,
@@ -983,6 +988,11 @@ class Session(RSession):
         )
         self.mount("http://", HTTPAdapter(max_retries=retries))
         self.mount("https://", HTTPAdapter(max_retries=retries))
+        if self.fs.base_url:
+            self.mount(
+                self.fs.base_url.rstrip('/') + '/',
+                HTTPAdapter(max_retries=0)
+            )
 
         self.headers.update({"User-Agent": Constants.DEFAULT_USERAGENT})
 
@@ -1016,7 +1026,11 @@ class Session(RSession):
         )
 
         if result.status_code == 403:
-            fs_result = self.fs.handle_cf_block(result.url, result.headers)
+            fs_result = self.fs.handle_cf_block(
+                result.url,
+                result.headers,
+                resolve_timeout=self.fs_resolve_timeout
+            )
 
             if fs_result:
                 result.url = fs_result["url"]
@@ -1050,7 +1064,10 @@ class AsyncSession(ClientSession):
     `aiohttp.client_exceptions.ClientError`.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        fs_resolve_timeout: int = Constants.FS_RESOLVE_TIMEOUT
+    ) -> None:
         from backend.implementations.flaresolverr import FlareSolverr
 
         super().__init__(
@@ -1063,6 +1080,7 @@ class AsyncSession(ClientSession):
         )
 
         self.fs = FlareSolverr()
+        self.fs_resolve_timeout = fs_resolve_timeout
 
         return
 
@@ -1115,7 +1133,10 @@ class AsyncSession(ClientSession):
 
             if response.status == 403:
                 fs_result = await self.fs.handle_cf_block_async(
-                    self, str(response.url), response.headers
+                    self,
+                    str(response.url),
+                    response.headers,
+                    resolve_timeout=self.fs_resolve_timeout
                 )
 
                 if fs_result:

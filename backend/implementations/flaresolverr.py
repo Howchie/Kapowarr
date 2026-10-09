@@ -119,29 +119,41 @@ class FlareSolverr:
     def __api_request(
         base_url: str,
         session: Session,
-        data: Dict[str, Any]
+        data: Dict[str, Any],
+        resolve_timeout: int
     ) -> Dict[str, Any]:
-        return session.post(
+        with session.post(
             base_url + Constants.FS_API_BASE,
             json=data,
             headers={'Content-Type': 'application/json'},
-            timeout=Constants.REQUEST_TIMEOUT + Constants.FS_RESOLVE_TIMEOUT
-        ).json()
+            timeout=FlareSolverr.__get_request_timeout(resolve_timeout)
+        ) as response:
+            response.raise_for_status()
+            return response.json()
 
     @staticmethod
     async def __async_api_request(
         base_url: str,
         session: AsyncSession,
-        data: Dict[str, Any]
+        data: Dict[str, Any],
+        resolve_timeout: int
     ) -> Dict[str, Any]:
         async with session.post(
             base_url + Constants.FS_API_BASE,
             json=data,
             headers={'Content-Type': 'application/json'},
-            timeout=Constants.REQUEST_TIMEOUT + Constants.FS_RESOLVE_TIMEOUT
+            timeout=FlareSolverr.__get_request_timeout(resolve_timeout)
         ) as response:
             response.raise_for_status()
             return await response.json()
+
+    @staticmethod
+    def __get_request_timeout(resolve_timeout: int) -> int:
+        """Allow page load time while capping stalled FlareSolverr requests."""
+        return min(
+            Constants.REQUEST_TIMEOUT + Constants.FS_RESOLVE_TIMEOUT,
+            resolve_timeout + Constants.FS_RESOLVE_GRACE_TIMEOUT
+        )
 
     @staticmethod
     def test_flaresolverr(base_url: str) -> bool:
@@ -195,7 +207,8 @@ class FlareSolverr:
     def handle_cf_block(
         self,
         url: str,
-        headers: Mapping[str, str]
+        headers: Mapping[str, str],
+        resolve_timeout: int = Constants.FS_RESOLVE_TIMEOUT
     ) -> Union[None, Dict[str, Any]]:
         """Let FS handle a URL to aquire cleared cookies and UA. These become
         available using `get_ua_cookies()` after this method completes.
@@ -224,20 +237,31 @@ class FlareSolverr:
             StatusHandlers().report(StatusType.CF_CHALLENGE_WITH_NO_FS, '')
             return
 
-        with Session() as session:
-            result = self.__api_request(
-                self.base_url, session,
-                {
-                    'cmd': 'request.get',
-                    'url': url,
-                    'maxTimeout': Constants.FS_RESOLVE_TIMEOUT * 1000,
-                    **(self.proxy_data or {})
-                }
-            )["solution"]
+        try:
+            with Session(fs_resolve_timeout=resolve_timeout) as session:
+                result = self.__api_request(
+                    self.base_url, session,
+                    {
+                        'cmd': 'request.get',
+                        'url': url,
+                        'maxTimeout': resolve_timeout * 1000,
+                        **(self.proxy_data or {})
+                    },
+                    resolve_timeout
+                )["solution"]
+        except (RequestException, KeyError, TypeError, ValueError) as e:
+            LOGGER.warning(
+                "FlareSolverr failed to resolve Cloudflare challenge at %s: %s",
+                url, e
+            )
+            return
 
-        if result["response"] is None:
+        if not isinstance(result, dict) or result.get("response") is None:
             # FlareSolverr responded, but content of
             # returned webpage is empty.
+            LOGGER.warning(
+                "FlareSolverr returned no page while resolving %s", url
+            )
             return
 
         FSCache.set_ua_cookies(url, result)
@@ -248,7 +272,8 @@ class FlareSolverr:
         self,
         session: AsyncSession,
         url: str,
-        headers: Mapping[str, str]
+        headers: Mapping[str, str],
+        resolve_timeout: int = Constants.FS_RESOLVE_TIMEOUT
     ) -> Union[None, Dict[str, Any]]:
         """Let FS handle a URL to aquire cleared cookies and UA. These become
         available using `get_ua_cookies()` after this method completes.
@@ -293,9 +318,10 @@ class FlareSolverr:
                     {
                         'cmd': 'request.get',
                         'url': url,
-                        'maxTimeout': Constants.FS_RESOLVE_TIMEOUT * 1000,
+                        'maxTimeout': resolve_timeout * 1000,
                         **(self.proxy_data or {})
-                    }
+                    },
+                    resolve_timeout
                 ))["solution"]
         except (ClientError, AsyncTimeoutError, KeyError, TypeError) as e:
             LOGGER.warning(

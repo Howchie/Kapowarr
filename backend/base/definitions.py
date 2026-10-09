@@ -130,6 +130,12 @@ class Constants:
     FS_RESOLVE_TIMEOUT = 300 # seconds
     "Timeout for FlareSolverr to solve the challenge"
 
+    FS_DOWNLOAD_RESOLVE_TIMEOUT = 60 # seconds
+    "Shorter FlareSolverr limit when validating a download link"
+
+    FS_RESOLVE_GRACE_TIMEOUT = 120 # seconds
+    "Extra time for FlareSolverr page loading before its solve timeout"
+
     MAX_CONCURRENT_FS_SESSIONS = 2
     "The maximum amount of FlareSolverr browser sessions that can concurrently run"
 

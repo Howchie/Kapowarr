@@ -16,7 +16,7 @@ from backend.base.custom_exceptions import (DownloadLinkBroken,
                                             EnqueuingDownloadFailure,
                                             IssueNotFound)
 from backend.base.definitions import (GC_DOWNLOAD_SERVICE_TERMS,
-                                      BlocklistReason, Download,
+                                      BlocklistReason, Constants, Download,
                                       DownloadClientIdentifier, DownloadGroup,
                                       DownloadPrepper, DownloadService,
                                       DownloadType,
@@ -348,7 +348,9 @@ async def _purify_link(
         # Direct magnet link
         return link, DownloadClientIdentifier.TORRENT
 
-    async with AsyncSession() as session:
+    async with AsyncSession(
+        fs_resolve_timeout=Constants.FS_DOWNLOAD_RESOLVE_TIMEOUT
+    ) as session:
         async with session.get(link) as r:
             if (
                 r.status == 429
@@ -443,7 +445,9 @@ class GetComicsPrepper(DownloadPrepper):
     def __fetch_page(self) -> BeautifulSoup:
         LOGGER.debug(f"Extracting download links from {self.link}")
 
-        with Session() as session:
+        with Session(
+            fs_resolve_timeout=Constants.FS_DOWNLOAD_RESOLVE_TIMEOUT
+        ) as session:
             try:
                 response = session.get(self.link)
 
